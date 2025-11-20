@@ -48,14 +48,14 @@ class KafkaMessageServiceTest {
                 Map<TopicPartition, OffsetAndTimestamp> startOffsets = new HashMap<>();
                 startOffsets.put(partition0, new OffsetAndTimestamp(0L, startTime.toEpochMilli()));
                 when(consumer.offsetsForTimes(
-                                argThat(map -> map.containsKey(partition0)
+                                argThat(map -> map != null && map.containsKey(partition0)
                                                 && map.get(partition0) == startTime.toEpochMilli())))
                                 .thenReturn(startOffsets);
 
                 Map<TopicPartition, OffsetAndTimestamp> endOffsets = new HashMap<>();
                 endOffsets.put(partition0, new OffsetAndTimestamp(10L, endTime.toEpochMilli()));
                 when(consumer.offsetsForTimes(
-                                argThat(map -> map.containsKey(partition0)
+                                argThat(map -> map != null && map.containsKey(partition0)
                                                 && map.get(partition0) == endTime.toEpochMilli())))
                                 .thenReturn(endOffsets);
 
