@@ -49,4 +49,19 @@ public class MessageController {
         var messages = kafkaMessageService.getMessagesWithExecId(topic, startTime, endTime, execId);
         return ResponseEntity.ok(messages);
     }
+
+    @GetMapping("/filter")
+    public ResponseEntity<List<MessageDto>> getMessagesFromTopics(
+            @RequestParam List<String> topics,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant startTime,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endTime,
+            @RequestParam(required = false) String execId) {
+
+        if (startTime.isAfter(endTime)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        var messages = kafkaMessageService.getMessagesFromTopics(topics, startTime, endTime, execId);
+        return ResponseEntity.ok(messages);
+    }
 }

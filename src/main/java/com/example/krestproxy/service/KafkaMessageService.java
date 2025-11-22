@@ -28,22 +28,31 @@ public class KafkaMessageService {
     }
 
     public List<MessageDto> getMessages(String topic, Instant startTime, Instant endTime) {
-        return getMessagesInternal(topic, startTime, endTime, null);
+        return getMessagesInternal(List.of(topic), startTime, endTime, null);
     }
 
     public List<MessageDto> getMessagesWithExecId(String topic, Instant startTime, Instant endTime, String execId) {
-        return getMessagesInternal(topic, startTime, endTime, execId);
+        return getMessagesInternal(List.of(topic), startTime, endTime, execId);
     }
 
-    private List<MessageDto> getMessagesInternal(String topic, Instant startTime, Instant endTime, String execId) {
+    public List<MessageDto> getMessagesFromTopics(List<String> topics, Instant startTime, Instant endTime, String execId) {
+        return getMessagesInternal(topics, startTime, endTime, execId);
+    }
+
+    private List<MessageDto> getMessagesInternal(java.util.Collection<String> topics, Instant startTime, Instant endTime, String execId) {
         Consumer<Object, Object> consumer = null;
         try {
             consumer = consumerPool.borrowObject();
 
-            // Assign all partitions of the topic to this consumer
-            var partitions = consumer.partitionsFor(topic).stream()
-                    .map(pi -> new TopicPartition(topic, pi.partition()))
-                    .toList();
+            var partitions = new ArrayList<TopicPartition>();
+            for (String topic : topics) {
+                var partitionInfos = consumer.partitionsFor(topic);
+                if (partitionInfos != null) {
+                    partitions.addAll(partitionInfos.stream()
+                            .map(pi -> new TopicPartition(topic, pi.partition()))
+                            .toList());
+                }
+            }
 
             consumer.assign(partitions);
 
@@ -104,6 +113,7 @@ public class KafkaMessageService {
                                     };
 
                                     messages.add(new MessageDto(
+                                            record.topic(),
                                             content,
                                             record.timestamp(),
                                             record.partition(),

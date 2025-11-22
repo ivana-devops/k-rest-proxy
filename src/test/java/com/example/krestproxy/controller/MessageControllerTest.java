@@ -48,8 +48,8 @@ class MessageControllerTest {
 
     @Test
     void getMessages_shouldReturnMessages_whenApiKeyIsValid() throws Exception {
-        com.example.krestproxy.dto.MessageDto msg1 = new com.example.krestproxy.dto.MessageDto("msg1", 1000L, 0, 0L);
-        com.example.krestproxy.dto.MessageDto msg2 = new com.example.krestproxy.dto.MessageDto("msg2", 2000L, 0, 1L);
+        com.example.krestproxy.dto.MessageDto msg1 = new com.example.krestproxy.dto.MessageDto("test-topic", "msg1", 1000L, 0, 0L);
+        com.example.krestproxy.dto.MessageDto msg2 = new com.example.krestproxy.dto.MessageDto("test-topic", "msg2", 2000L, 0, 1L);
 
         when(kafkaMessageService.getMessages(eq("test-topic"), any(Instant.class), any(Instant.class)))
                 .thenReturn(Arrays.asList(msg1, msg2));
@@ -60,12 +60,12 @@ class MessageControllerTest {
                 .param("endTime", "2023-01-01T10:05:00Z"))
                 .andExpect(status().isOk())
                 .andExpect(content().json(
-                        "[{\"content\":\"msg1\",\"timestamp\":1000,\"partition\":0,\"offset\":0},{\"content\":\"msg2\",\"timestamp\":2000,\"partition\":0,\"offset\":1}]"));
+                        "[{\"topicName\":\"test-topic\",\"content\":\"msg1\",\"timestamp\":1000,\"partition\":0,\"offset\":0},{\"topicName\":\"test-topic\",\"content\":\"msg2\",\"timestamp\":2000,\"partition\":0,\"offset\":1}]"));
     }
 
     @Test
     void getMessagesWithExecId_shouldReturnMessages_whenApiKeyIsValid() throws Exception {
-        com.example.krestproxy.dto.MessageDto msg1 = new com.example.krestproxy.dto.MessageDto("msg1", 1000L, 0, 0L);
+        com.example.krestproxy.dto.MessageDto msg1 = new com.example.krestproxy.dto.MessageDto("test-topic", "msg1", 1000L, 0, 0L);
 
         when(kafkaMessageService.getMessagesWithExecId(eq("test-topic"), any(Instant.class), any(Instant.class), eq("exec-1")))
                 .thenReturn(Collections.singletonList(msg1));
@@ -77,6 +77,6 @@ class MessageControllerTest {
                 .param("execId", "exec-1"))
                 .andExpect(status().isOk())
                 .andExpect(content().json(
-                        "[{\"content\":\"msg1\",\"timestamp\":1000,\"partition\":0,\"offset\":0}]"));
+                        "[{\"topicName\":\"test-topic\",\"content\":\"msg1\",\"timestamp\":1000,\"partition\":0,\"offset\":0}]"));
     }
 }
