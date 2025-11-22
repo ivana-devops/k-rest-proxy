@@ -111,7 +111,97 @@ public class KRestProxyIntegrationTest {
                                 "?startTime=" + Instant.now().minusSeconds(60).toString() +
                                 "&endTime=" + Instant.now().plusSeconds(60).toString();
 
-                // SSL setup (assuming previous hack is still acceptable/needed in this context)
+                org.springframework.web.client.RestTemplate looseRestTemplate = createInsecureRestTemplate();
+
+                ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
+                                url,
+                                HttpMethod.GET,
+                                entity,
+                                new ParameterizedTypeReference<List<MessageDto>>() {
+                                });
+
+                assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+                List<MessageDto> messages = response.getBody();
+                assertThat(messages).isNotEmpty();
+                assertThat(messages.get(0).content()).contains("\"name\":\"Alice\"");
+                assertThat(messages.get(0).content()).contains("\"age\":30");
+        }
+
+        @Test
+        void testGetMessagesWithExecId() throws Exception {
+                String topic = "test-integration-topic-filter";
+
+                // Define schemas
+                String keySchemaString = "{\"type\":\"record\",\"name\":\"Key\",\"fields\":[{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"exec_id\",\"type\":\"string\"},{\"name\":\"timestamp\",\"type\":\"long\"}]}";
+                Schema keySchema = new Schema.Parser().parse(keySchemaString);
+
+                String valueSchemaString = "{\"type\":\"record\",\"name\":\"Value\",\"fields\":[{\"name\":\"data\",\"type\":\"string\"}]}";
+                Schema valueSchema = new Schema.Parser().parse(valueSchemaString);
+
+                // Produce messages
+                Map<String, Object> props = new HashMap<>();
+                props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+                props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
+                props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
+                props.put("schema.registry.url",
+                                "http://" + schemaRegistry.getHost() + ":" + schemaRegistry.getMappedPort(8081));
+
+                ProducerFactory<Object, Object> producerFactory = new DefaultKafkaProducerFactory<>(props);
+                KafkaTemplate<Object, Object> template = new KafkaTemplate<>(producerFactory);
+
+                // Message 1: Matches exec_id
+                GenericRecord key1 = new GenericData.Record(keySchema);
+                key1.put("version", "v1");
+                key1.put("exec_id", "exec-target");
+                key1.put("timestamp", System.currentTimeMillis());
+
+                GenericRecord val1 = new GenericData.Record(valueSchema);
+                val1.put("data", "match");
+
+                template.send(topic, key1, val1).get();
+
+                // Message 2: Different exec_id
+                GenericRecord key2 = new GenericData.Record(keySchema);
+                key2.put("version", "v1");
+                key2.put("exec_id", "exec-other");
+                key2.put("timestamp", System.currentTimeMillis());
+
+                GenericRecord val2 = new GenericData.Record(valueSchema);
+                val2.put("data", "no-match");
+
+                template.send(topic, key2, val2).get();
+
+                // Wait a bit
+                Thread.sleep(2000);
+
+                // Call API
+                HttpHeaders headers = new HttpHeaders();
+                headers.set("X-API-KEY", "secret-api-key");
+                HttpEntity<String> entity = new HttpEntity<>(headers);
+
+                String url = "https://localhost:" + port + "/api/v1/messages/" + topic + "/filter" +
+                                "?startTime=" + Instant.now().minusSeconds(60).toString() +
+                                "&endTime=" + Instant.now().plusSeconds(60).toString() +
+                                "&execId=exec-target";
+
+                // Use loose RestTemplate
+                org.springframework.web.client.RestTemplate looseRestTemplate = createInsecureRestTemplate();
+
+                ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
+                                url,
+                                HttpMethod.GET,
+                                entity,
+                                new ParameterizedTypeReference<List<MessageDto>>() {
+                                });
+
+                assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+                List<MessageDto> messages = response.getBody();
+                assertThat(messages).hasSize(1);
+                assertThat(messages.get(0).content()).contains("match");
+                assertThat(messages.get(0).content()).doesNotContain("no-match");
+        }
+
+        private org.springframework.web.client.RestTemplate createInsecureRestTemplate() throws Exception {
                 javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
                                 new javax.net.ssl.X509TrustManager() {
                                         public java.security.cert.X509Certificate[] getAcceptedIssuers() {
@@ -133,93 +223,6 @@ public class KRestProxyIntegrationTest {
                 javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
                 javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
 
-                org.springframework.web.client.RestTemplate looseRestTemplate = new org.springframework.web.client.RestTemplate();
-
-                ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
-                                url,
-                                HttpMethod.GET,
-                                entity,
-                                new ParameterizedTypeReference<List<MessageDto>>() {
-                                });
-
-                assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-                List<MessageDto> messages = response.getBody();
-                assertThat(messages).isNotEmpty();
-                assertThat(messages.get(0).content()).contains("\"name\":\"Alice\"");
-                assertThat(messages.get(0).content()).contains("\"age\":30");
-        }
-
-        @Test
-        void testGetMessagesWithExecId() throws Exception {
-            String topic = "test-integration-topic-filter";
-
-            // Define schemas
-            String keySchemaString = "{\"type\":\"record\",\"name\":\"Key\",\"fields\":[{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"exec_id\",\"type\":\"string\"},{\"name\":\"timestamp\",\"type\":\"long\"}]}";
-            Schema keySchema = new Schema.Parser().parse(keySchemaString);
-
-            String valueSchemaString = "{\"type\":\"record\",\"name\":\"Value\",\"fields\":[{\"name\":\"data\",\"type\":\"string\"}]}";
-            Schema valueSchema = new Schema.Parser().parse(valueSchemaString);
-
-            // Produce messages
-            Map<String, Object> props = new HashMap<>();
-            props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-            props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
-            props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
-            props.put("schema.registry.url",
-                            "http://" + schemaRegistry.getHost() + ":" + schemaRegistry.getMappedPort(8081));
-
-            ProducerFactory<Object, Object> producerFactory = new DefaultKafkaProducerFactory<>(props);
-            KafkaTemplate<Object, Object> template = new KafkaTemplate<>(producerFactory);
-
-            // Message 1: Matches exec_id
-            GenericRecord key1 = new GenericData.Record(keySchema);
-            key1.put("version", "v1");
-            key1.put("exec_id", "exec-target");
-            key1.put("timestamp", System.currentTimeMillis());
-
-            GenericRecord val1 = new GenericData.Record(valueSchema);
-            val1.put("data", "match");
-
-            template.send(topic, key1, val1).get();
-
-            // Message 2: Different exec_id
-            GenericRecord key2 = new GenericData.Record(keySchema);
-            key2.put("version", "v1");
-            key2.put("exec_id", "exec-other");
-            key2.put("timestamp", System.currentTimeMillis());
-
-            GenericRecord val2 = new GenericData.Record(valueSchema);
-            val2.put("data", "no-match");
-
-            template.send(topic, key2, val2).get();
-
-            // Wait a bit
-            Thread.sleep(2000);
-
-            // Call API
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("X-API-KEY", "secret-api-key");
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-
-            String url = "https://localhost:" + port + "/api/v1/messages/" + topic + "/filter" +
-                            "?startTime=" + Instant.now().minusSeconds(60).toString() +
-                            "&endTime=" + Instant.now().plusSeconds(60).toString() +
-                            "&execId=exec-target";
-
-            // Use loose RestTemplate
-            org.springframework.web.client.RestTemplate looseRestTemplate = new org.springframework.web.client.RestTemplate();
-
-            ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
-                            url,
-                            HttpMethod.GET,
-                            entity,
-                            new ParameterizedTypeReference<List<MessageDto>>() {
-                            });
-
-            assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-            List<MessageDto> messages = response.getBody();
-            assertThat(messages).hasSize(1);
-            assertThat(messages.get(0).content()).contains("match");
-            assertThat(messages.get(0).content()).doesNotContain("no-match");
+                return new org.springframework.web.client.RestTemplate();
         }
 }
