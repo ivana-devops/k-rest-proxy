@@ -16,12 +16,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class KafkaMessageService {
 
     private static final String EXEC_IDS_TOPIC = "execids";
     private final ObjectPool<Consumer<Object, Object>> consumerPool;
+    private final Map<String, ExecTime> execTimeCache = new ConcurrentHashMap<>();
 
     @Autowired
     public KafkaMessageService(ObjectPool<Consumer<Object, Object>> consumerPool) {
@@ -33,9 +35,14 @@ public class KafkaMessageService {
         return getMessagesInternal(topics, times.start(), times.end(), execId);
     }
 
-    private record ExecTime(Instant start, Instant end) {}
+    private record ExecTime(Instant start, Instant end) {
+    }
 
     private ExecTime findExecutionTimes(String execId) {
+        if (execTimeCache.containsKey(execId)) {
+            return execTimeCache.get(execId);
+        }
+
         Consumer<Object, Object> consumer = null;
         try {
             consumer = consumerPool.borrowObject();
@@ -71,7 +78,9 @@ public class KafkaMessageService {
                 throw new RuntimeException("Could not find start and/or end time for execution ID: " + execId);
             }
 
-            return new ExecTime(startTime, endTime);
+            var execTime = new ExecTime(startTime, endTime);
+            execTimeCache.put(execId, execTime);
+            return execTime;
 
         } catch (Exception e) {
             if (e instanceof RuntimeException re) {
@@ -97,11 +106,13 @@ public class KafkaMessageService {
         return getMessagesInternal(List.of(topic), startTime, endTime, execId);
     }
 
-    public List<MessageDto> getMessagesFromTopics(List<String> topics, Instant startTime, Instant endTime, String execId) {
+    public List<MessageDto> getMessagesFromTopics(List<String> topics, Instant startTime, Instant endTime,
+            String execId) {
         return getMessagesInternal(topics, startTime, endTime, execId);
     }
 
-    private List<MessageDto> getMessagesInternal(java.util.Collection<String> topics, Instant startTime, Instant endTime, String execId) {
+    private List<MessageDto> getMessagesInternal(java.util.Collection<String> topics, Instant startTime,
+            Instant endTime, String execId) {
         Consumer<Object, Object> consumer = null;
         try {
             consumer = consumerPool.borrowObject();
