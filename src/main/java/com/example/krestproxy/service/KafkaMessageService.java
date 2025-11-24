@@ -6,7 +6,10 @@ import com.example.krestproxy.dto.PaginatedResponse;
 import com.example.krestproxy.exception.ExecutionNotFoundException;
 import com.example.krestproxy.exception.KafkaOperationException;
 import com.example.krestproxy.util.CursorUtil;
+import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.io.JsonEncoder;
 import org.apache.commons.pool2.ObjectPool;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
@@ -29,6 +32,16 @@ public class KafkaMessageService {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaMessageService.class);
     private static final String EXEC_IDS_TOPIC = "execids";
+
+    private static final ThreadLocal<ReusableAvroResources> avroResources = ThreadLocal
+            .withInitial(ReusableAvroResources::new);
+
+    private static class ReusableAvroResources {
+        final java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
+        JsonEncoder encoder = null;
+        final GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<>();
+    }
+
     private final ObjectPool<Consumer<Object, Object>> consumerPool;
     private final KafkaProperties kafkaProperties;
 
@@ -299,13 +312,16 @@ public class KafkaMessageService {
 
     private String convertAvroToJson(GenericRecord record) {
         try {
-            var outputStream = new java.io.ByteArrayOutputStream();
-            var jsonEncoder = org.apache.avro.io.EncoderFactory.get()
+            var resources = avroResources.get();
+            var outputStream = resources.outputStream;
+            outputStream.reset();
+
+            resources.encoder = EncoderFactory.get()
                     .jsonEncoder(record.getSchema(), outputStream);
-            var writer = new org.apache.avro.generic.GenericDatumWriter<GenericRecord>(
-                    record.getSchema());
-            writer.write(record, jsonEncoder);
-            jsonEncoder.flush();
+
+            resources.writer.setSchema(record.getSchema());
+            resources.writer.write(record, resources.encoder);
+            resources.encoder.flush();
             return outputStream.toString(StandardCharsets.UTF_8);
         } catch (java.io.IOException e) {
             logger.error("Error converting Avro to JSON", e);

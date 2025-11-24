@@ -1,6 +1,7 @@
 package com.example.krestproxy;
 
 import com.example.krestproxy.dto.MessageDto;
+import com.example.krestproxy.dto.PaginatedResponse;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -113,15 +114,15 @@ public class KRestProxyIntegrationTest {
 
                 org.springframework.web.client.RestTemplate looseRestTemplate = createInsecureRestTemplate();
 
-                ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
+                ResponseEntity<PaginatedResponse<MessageDto>> response = looseRestTemplate.exchange(
                                 url,
                                 HttpMethod.GET,
                                 entity,
-                                new ParameterizedTypeReference<List<MessageDto>>() {
+                                new ParameterizedTypeReference<PaginatedResponse<MessageDto>>() {
                                 });
 
                 assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-                List<MessageDto> messages = response.getBody();
+                List<MessageDto> messages = response.getBody().data();
                 assertThat(messages).isNotEmpty();
                 assertThat(messages.get(0).content()).contains("\"name\":\"Alice\"");
                 assertThat(messages.get(0).content()).contains("\"age\":30");
@@ -187,15 +188,15 @@ public class KRestProxyIntegrationTest {
                 // Use loose RestTemplate
                 org.springframework.web.client.RestTemplate looseRestTemplate = createInsecureRestTemplate();
 
-                ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
+                ResponseEntity<PaginatedResponse<MessageDto>> response = looseRestTemplate.exchange(
                                 url,
                                 HttpMethod.GET,
                                 entity,
-                                new ParameterizedTypeReference<List<MessageDto>>() {
+                                new ParameterizedTypeReference<PaginatedResponse<MessageDto>>() {
                                 });
 
                 assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-                List<MessageDto> messages = response.getBody();
+                List<MessageDto> messages = response.getBody().data();
                 assertThat(messages).hasSize(1);
                 assertThat(messages.get(0).content()).contains("match");
                 assertThat(messages.get(0).content()).doesNotContain("no-match");
@@ -208,13 +209,14 @@ public class KRestProxyIntegrationTest {
                 String targetExecId = "exec-auto-scan";
 
                 // 1. Produce Start/End events to "execids" topic
-                // We assume the "execids" topic uses Strings (Avro primitive string schema) for Key and Value.
+                // We assume the "execids" topic uses Strings (Avro primitive string schema) for
+                // Key and Value.
                 Map<String, Object> props = new HashMap<>();
                 props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
                 props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
                 props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
                 props.put("schema.registry.url",
-                        "http://" + schemaRegistry.getHost() + ":" + schemaRegistry.getMappedPort(8081));
+                                "http://" + schemaRegistry.getHost() + ":" + schemaRegistry.getMappedPort(8081));
 
                 ProducerFactory<Object, Object> producerFactory = new DefaultKafkaProducerFactory<>(props);
                 KafkaTemplate<Object, Object> template = new KafkaTemplate<>(producerFactory);
@@ -225,8 +227,10 @@ public class KRestProxyIntegrationTest {
 
                 // Produce "start"
                 // Note: KafkaAvroSerializer handles String if we treat it as a primitive.
-                // However, strictly speaking, we might need to be careful about how the schema is registered.
-                // Using plain strings here triggers implicit schema generation for primitive string.
+                // However, strictly speaking, we might need to be careful about how the schema
+                // is registered.
+                // Using plain strings here triggers implicit schema generation for primitive
+                // string.
                 template.send(execIdsTopic, 0, startTs, targetExecId, "start").get();
 
                 // Produce "end"
@@ -270,17 +274,17 @@ public class KRestProxyIntegrationTest {
                 HttpEntity<String> entity = new HttpEntity<>(headers);
 
                 String url = "https://localhost:" + port + "/api/v1/messages/by-execution" +
-                        "?topics=" + topic +
-                        "&execId=" + targetExecId;
+                                "?topics=" + topic +
+                                "&execId=" + targetExecId;
 
                 org.springframework.web.client.RestTemplate looseRestTemplate = createInsecureRestTemplate();
 
                 ResponseEntity<List<MessageDto>> response = looseRestTemplate.exchange(
-                        url,
-                        HttpMethod.GET,
-                        entity,
-                        new ParameterizedTypeReference<List<MessageDto>>() {
-                        });
+                                url,
+                                HttpMethod.GET,
+                                entity,
+                                new ParameterizedTypeReference<List<MessageDto>>() {
+                                });
 
                 assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
                 List<MessageDto> messages = response.getBody();
